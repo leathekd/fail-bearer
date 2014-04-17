@@ -1,6 +1,7 @@
 (ns fail.bearer
   (:require [carica.core :as carica]
             [clojure.string :as str]
+            [overtone.at-at :as at-at]
             [taoensso.timbre :as log]
             [tentacles.issues :as issues]
             [tentacles.pulls :as pulls]))
@@ -87,6 +88,7 @@
 (defn process-pr [user repo-name oauth-token pr]
   (when (and (build-failed? pr)
              (comment-required? pr))
+    (log/debug "posting a comment to" (:number pr))
     (if-let [image (failure-image pr)]
       (add-comment user repo-name oauth-token (:number pr)
                    (str/trim (format "![%s](%s)\n\n%s"
@@ -107,4 +109,8 @@
     (process-pr user repo-name oauth-token pr)))
 
 (defn -main [& args]
-  (process-prs))
+  (if (some #(= "--scheduled" %) args)
+    (let [pool (at-at/mk-pool)
+          interval (* 1000 60 (config :schedule-minutes))]
+      (at-at/every interval process-prs pool))
+    (process-prs)))
