@@ -1,9 +1,11 @@
 (ns fail.bearer
   (:require [carica.core :as carica]
             [clojure.string :as str]
-            [clojure.tools.logging :as log]
+            [taoensso.timbre :as log]
             [tentacles.issues :as issues]
             [tentacles.pulls :as pulls]))
+
+(log/refer-timbre)
 
 (def date-fmt (java.text.SimpleDateFormat. "yyyy-MM-dd'T'HH:mm:ss'Z'"))
 
@@ -93,10 +95,14 @@
       (log/warn "Can't post a funny image as none are defined"))))
 
 (defn process-prs []
+  (log/set-config! [:appenders :spit :enabled?] true)
+  (log/set-config! [:shared-appender-config :spit-filename] "fail-bearer.log")
+  (log/info :starting-process)
   (doseq [repo (config :github :repos)
           :let [oauth-token (config :github :oauth-token)
                 [user repo-name] (str/split repo #"/")]
           pr (pull-requests user repo-name oauth-token)]
+    (log/debug "processing pr" (:number pr))
     (process-pr user repo-name oauth-token pr)))
 
 (defn -main [& args]
