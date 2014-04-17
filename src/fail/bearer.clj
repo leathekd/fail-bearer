@@ -10,7 +10,7 @@
 
 (def date-fmt (java.text.SimpleDateFormat. "yyyy-MM-dd'T'HH:mm:ss'Z'"))
 
-(def config (carica/configurer (carica/resources "config.edn") []))
+(def load-config (carica/configurer (carica/resources "config.edn") []))
 
 (defn make-date [date-str]
   (.parse date-fmt date-str))
@@ -56,8 +56,8 @@
 (defn failure-image
   "takes the pr and returns a unique image or just a random one if
   this pr is really bad."
-  [pr]
-  (let [urls (config :failure-images)
+  [config pr]
+  (let [urls (:failure-images config)
         all-comments (str/join " " (map :body (:comments pr)))
         new-gif (some #(when-not (.contains all-comments (str "(" % ")")) %)
                       (shuffle urls))]
@@ -66,8 +66,8 @@
 (defn failure-quote
   "take sthe pr and returns a random quote from the config file or an
   empty string if there are no quotes"
-  [pr]
-  (let [quotes (config :failure-quotes)
+  [config pr]
+  (let [quotes (:failure-quotes config)
         all-comments (str/join " " (map :body (:comments pr)))
         new-quote (some #(when-not (.contains all-comments (str "(" % ")")) %)
                         quotes)]
@@ -76,41 +76,46 @@
 (defn comment-required?
   "A comment is required unless a failure gif has been posted since
   the last build"
-  [pr]
+  [config pr]
   (let [build-date (get-in pr [:status :created-at])
         ;; if build-date is greater than created-at, then remove it
         new-comments (remove #(pos? (.compareTo build-date (:created-at %)))
                              (:comments pr))
         comments-str (str/join " " (map :body new-comments))]
     (boolean (not (some #(.contains comments-str %)
-                        (config :failure-images))))))
+                        (:failure-images config))))))
 
-(defn process-pr [user repo-name oauth-token pr]
+(defn process-pr [config user repo-name oauth-token pr]
   (when (and (build-failed? pr)
-             (comment-required? pr))
+             (comment-required? config pr))
     (log/debug "posting a comment to" (:number pr))
-    (if-let [image (failure-image pr)]
+    (if-let [image (failure-image config pr)]
       (add-comment user repo-name oauth-token (:number pr)
                    (str/trim (format "![%s](%s)\n\n%s"
-                                     (failure-quote pr)
+                                     (failure-quote config pr)
                                      image
-                                     (or (config :comment-disclaimer) ""))))
+                                     (or (:comment-disclaimer config) ""))))
       (log/warn "Can't post a funny image as none are defined"))))
 
-(defn process-prs []
-  (log/set-config! [:appenders :spit :enabled?] true)
-  (log/set-config! [:shared-appender-config :spit-filename] "fail-bearer.log")
-  (log/info :starting-process)
-  (doseq [repo (config :github :repos)
-          :let [oauth-token (config :github :oauth-token)
+(defn process-prs [config]
+  (log/debug :process-prs)
+  (doseq [repo (get-in config [:github :repos])
+          :let [oauth-token (get-in config [:github :oauth-token])
                 [user repo-name] (str/split repo #"/")]
           pr (pull-requests user repo-name oauth-token)]
     (log/debug "processing pr" (:number pr))
-    (process-pr user repo-name oauth-token pr)))
+    (process-pr config user repo-name oauth-token pr)))
+
+(defn start-process []
+  (log/set-config! [:appenders :spit :enabled?] true)
+  (log/set-config! [:shared-appender-config :spit-filename] "fail-bearer.log")
+  (log/info :starting-process)
+  (process-prs (load-config)))
 
 (defn -main [& args]
   (if (some #(= "--scheduled" %) args)
     (let [pool (at-at/mk-pool)
-          interval (* 1000 60 (config :schedule-minutes))]
-      (at-at/every interval process-prs pool))
-    (process-prs)))
+          interval (* 1000 60 (:schedule-minutes (load-config)))]
+      (log/debug "beginning scheduled run")
+      (at-at/every interval start-process pool))
+    (start-process)))
