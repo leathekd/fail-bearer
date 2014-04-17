@@ -56,7 +56,7 @@
   (let [urls (config :failure-images)
         all-comments (str/join " " (map :body (:comments pr)))
         new-gif (some #(when-not (.contains all-comments (str "(" % ")")) %)
-                      urls)]
+                      (shuffle urls))]
     (or new-gif (rand-nth urls))))
 
 (defn failure-quote
