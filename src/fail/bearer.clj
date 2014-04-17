@@ -73,12 +73,13 @@
   "A comment is required unless a failure gif has been posted since
   the last build"
   [pr]
-  (let [build-date (get-in pr [:build-status :created-at])
+  (let [build-date (get-in pr [:status :created-at])
         ;; if build-date is greater than created-at, then remove it
         new-comments (remove #(pos? (.compareTo build-date (:created-at %)))
                              (:comments pr))
         comments-str (str/join " " (map :body new-comments))]
-    (boolean (some #(.contains comments-str %) (config :gif-urls)))))
+    (boolean (not (some #(.contains comments-str %)
+                        (config :failure-images))))))
 
 (defn process-pr [user repo-name oauth-token pr]
   (when (and (build-failed? pr)
