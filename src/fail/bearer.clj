@@ -25,7 +25,8 @@
      :created-at (make-date (:created_at status))}))
 
 (defn build-failed? [pr]
-  (= "failure" (get-in pr [:status :state])))
+  (or (= "failure" (get-in pr [:status :state]))
+      (= "error" (get-in pr [:status :state]))))
 
 (defn comments [user repo-name oauth-token pr-number]
   (for [comment (->> (issues/issue-comments user repo-name pr-number
